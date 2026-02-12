@@ -1,85 +1,27 @@
-void enter_room(ClientInfo *client, cJSON *root) // 방에 입장하면 실행되는함수
-{
-    cJSON *data = cJSON_GetObjectItem(root, "data");
-    if (!data)
-        return;
+# 1. CMake 버전 설정
+cmake_minimum_required(VERSION 3.10)
 
-    cJSON *id_obj = cJSON_GetObjectItem(data, "room_id");
-    cJSON *user_obj = cJSON_GetObjectItem(data, "user_id"); // [수정] 일단 객체만 가져옴
+# 2. 프로젝트 정보
+project(HiRunningDay VERSION 1.0)
 
-    if (!id_obj)
-        return; // 방 번호 없으면 무시
+# 3. C++ 표준 설정 (최신 문법을 쓰기 위해 17버전 추천)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-    int room_id = id_obj->valueint;
+# --- 1. 서버 프로그램 만들기 ---
+# server_main.cpp와 필요한 부품들을 합쳐서 'talk_server' 생성
+add_executable(goodtalk_server 
+    server_project.c 
+    cJSON.h  # 보상 로직이 서버에 필요하다면 추가
+    cJSON.c
+    protocol_header.h
+)
 
-    // 1. 방 존재 및 활성화 확인
-    if (room_id < 0 || room_id >= MAX_ROOMS || !room_list[room_id].is_active)
-    {
-        cJSON *response = cJSON_CreateObject();
-        cJSON *res_data = cJSON_CreateObject();
-        cJSON_AddStringToObject(res_data, "result", "실패");
-        cJSON_AddItemToObject(response, "data", res_data);
-
-        char *json_str = cJSON_PrintUnformatted(response);
-        if (json_str)
-        {
-            char packet[BUFFER_SIZE];
-            sprintf(packet, "%s\n", json_str);
-            send(client->socket, packet, strlen(packet), 0);
-            free(json_str);
-        }
-        return;
-    }
-
-    ChatRoom *room = &room_list[room_id];
-
-    // 방에 자리 구하는
-    pthread_mutex_lock(&room->room_mutex);
-    int empty_slot = -1;
-    // 빈 자리 찾기
-    for (int i = 0; i < MAX_CLIENTS_PER_ROOM; i++)
-    {
-        if (room->client_socks[i] == -1)
-        {
-            empty_slot = i;
-            break;
-        }
-    }
-
-    // 자리가 없으면  쫓아내기
-    if (empty_slot == -1)
-    {
-        cJSON *response = cJSON_CreateObject();
-        cJSON_AddNumberToObject(response, "protocol", ACK_JOIN_ROOM);
-        cJSON *res_data = cJSON_CreateObject();
-        cJSON_AddStringToObject(res_data, "result", "실패");
-        cJSON_AddItemToObject(response, "data", res_data);
-        pthread_mutex_unlock(&room->room_mutex);
-        return;
-    }
-    room->client_socks[empty_slot] = client->socket; // 방에 입장시에 유저수 카운트 하기
-    room->user_count++;
-
-    client->current_room = room; // 이 방에 있다고 표시
-
-    pthread_mutex_unlock(&room->room_mutex); // 자물쇠 해제
-
-    save_rooms_to_file();
-
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddNumberToObject(response, "protocol", ACK_JOIN_ROOM);
-    cJSON *res_data = cJSON_CreateObject();
-    cJSON_AddStringToObject(res_data, "result", "성공");
-    cJSON_AddItemToObject(response, "data", res_data);
-
-    char *json_str = cJSON_PrintUnformatted(response);
-    if (json_str)
-    {
-        char packet[BUFFER_SIZE];
-        sprintf(packet, "%s\n", json_str);
-        send(client->socket, packet, strlen(packet), 0);
-        free(json_str);
-    }
-    cJSON_Delete(response);
-    notify_entry(room, client);
-}
+# --- 2. 클라이언트 프로그램 만들기 ---
+# client_main.cpp를 가지고 'talk_client' 생성
+add_executable(goodtalk_client 
+    client_project.c
+    protocol_header.h
+    cJSON.h
+    cJSON.c
+)
